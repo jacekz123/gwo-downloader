@@ -1,11 +1,10 @@
 #!/usr/bin/python3
 
-from requests import get
-from urllib import request
 from argparse import ArgumentParser
-from sys import argv
+from logging import INFO, basicConfig, getLogger
 from pathlib import Path
-from logging import INFO, getLogger, basicConfig
+from sys import argv
+from urllib.request import Request, urlopen
 
 # Logger configuration
 basicConfig(level=INFO, format='[%(levelname)s][%(asctime)s] %(message)s')
@@ -36,9 +35,9 @@ prefix = args.prefix
 
 def retrive_image(url, path):
 	"""save content received from given url to given path"""
-	response = get(url, headers=HEADERS)
+	response = urlopen(Request(url, headers=HEADERS, method='GET'))
 	with open(path, 'wb') as fhandle:
-		fhandle.write(response.content)
+		fhandle.write(response.read())
 
 def generate_url(page_num) -> str:
 	"""generates url for given page number"""
