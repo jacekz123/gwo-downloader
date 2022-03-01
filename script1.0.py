@@ -1,10 +1,10 @@
 #!/usr/bin/python3
 
-import os
+
 from urllib import request
 from argparse import ArgumentParser
 from sys import argv
-from logging import Logger, INFO
+from pathlib import Path
 
 log = Logger(__file__, level=INFO)
 
@@ -21,7 +21,7 @@ args = arg_engine.parse_args(list(argv[1:]))
 # ----------------------------------
 bookId = args.book_id # book ID
 pages = args.pages # book page ccount
-datadir = args.datadir # path to directory with downloads
+datadir = Path(args.datadir) # path to directory with downloads
 override_files = args.force # override existing directory
 # ----------------------------------
 
@@ -31,13 +31,14 @@ request.install_opener(opener)
 pageText = "pages/page"
 fileExtension = ".PNG"
 
-if os.path.exists(datadir):
+# Path handling
+if datadir.exists():
 	if not override_files:
 		log.warning('directory already exist, change path or remove existing one')
 		exit(-1)
 else:
 	try:
-		os.mkdir(datadir)
+		datadir.mkdir()
 	except Exception as e:
 		log.error(f'exception occured while creating directory: {e}')
 
