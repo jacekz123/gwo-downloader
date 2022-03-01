@@ -5,8 +5,11 @@ from urllib import request
 from argparse import ArgumentParser
 from sys import argv
 from pathlib import Path
+from logging import INFO, getLogger, basicConfig
 
-log = Logger(__file__, level=INFO)
+# Logger configuration
+basicConfig(level=INFO, format='[%(levelname)s][%(asctime)s] %(message)s')
+log = getLogger(Path(__file__).name)
 
 # CONST
 BASE_URL = "https://flipbook.apps.gwo.pl/book/getImage/bookId:"
