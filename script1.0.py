@@ -7,9 +7,7 @@ from urllib.request import Request, urlopen
 from pathlib import Path
 from sys import argv
 
-# Logger configuration
-basicConfig(level=INFO, format='[%(levelname)s][%(asctime)s] %(message)s')
-log = getLogger(Path(__file__).name)
+from fpdf import FPDF
 
 # CONST
 PAGE_OFFSET = 1 # first book page on website is one
@@ -25,7 +23,10 @@ arg_engine.add_argument('-p', '--pages', type=int, dest='pages', required=True, 
 arg_engine.add_argument('-d', '--datadir', type=str, dest='datadir', default='pages', required=False, help='specifies directory where pages will be scrapped')
 arg_engine.add_argument('-k', '--prefix', type=str, dest='prefix', default='page_', required=False, help='specifies prefix before every page, concatenated with number and format')
 arg_engine.add_argument('-j', '--jobs', type=int, dest='jobs', default=1, help='specifies amount of jobs that will be used for downloading')
+arg_engine.add_argument('-o', '--out-pdf', type=str, dest='pdf_name', default=None, required=False, help='if specified, files will be squashed into one PDF with given name (overrides if exists!)')
+# FLAGS
 arg_engine.add_argument('-f', '--force', dest='force', help='if given, overrides files in directory', **BOOL_PARAM)
+arg_engine.add_argument('--remove-unused', dest='rm_unused', help='if given, with `-o` flag, removes all downloaded files', **BOOL_PARAM)
 args = arg_engine.parse_args(list(argv[1:]))
 
 # ----------------------------------
@@ -36,6 +37,8 @@ datadir = Path(args.datadir) # path to directory with downloads
 override_files = args.force # override existing directory
 prefix = args.prefix
 workers = args.jobs
+path_to_pdf = args.pdf_name
+rm_unused = args.rm_unused
 # ----------------------------------
 
 def retrive_image(url, path):
@@ -48,9 +51,9 @@ def generate_url(page_num) -> str:
 	"""generates url for given page number"""
 	return f'{BASE_URL}{bookId}/pageNo:{page_num}'
 
-def generate_path(page_num) -> Path:
+def generate_path(page_num) -> str:
 	"""generates save path for given page number"""
-	return datadir / f'{prefix}{page_num}.{IMAGE_EXT}'
+	return str( datadir / f'{prefix}{page_num}.{IMAGE_EXT}' )
 
 def handle_page(page_num):
 	path = generate_path(page_num)
@@ -74,6 +77,7 @@ else:
 	except Exception as e:
 		log.error(f'exception occured while creating directory: {e}')
 
+# Multithreading
 page_stop_range = max_page + 1
 pages_per_worker = int(page_stop_range / workers)
 with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -83,4 +87,25 @@ with ThreadPoolExecutor(max_workers=workers) as executor:
 
 	for future in futures:
 		exc = future.exception()
-		assert exc is None, f'job finished with exception: {exc}'
+
+# Generation of PDF
+if path_to_pdf is not None:
+	path_to_pdf = Path(path_to_pdf)
+	if path_to_pdf.exists():
+		log.warning(f'removing: {path_to_pdf}')
+		path_to_pdf.unlink()
+
+	# https://stackoverflow.com/a/27327984/11738218
+	pdf = FPDF()
+	for page_num in range(PAGE_OFFSET, max_page):
+		pdf.add_page()
+
+		img_path = generate_path(page_num)
+		pdf.image(img_path, x=0, y=0, w=210, h=297)
+	pdf.output(dest='F', name=str(path_to_pdf))
+
+	# Handling of unneed files, on user request
+	if rm_unused:
+		for file in datadir.glob(f'*.{IMAGE_EXT}'):
+			file.unlink()
+		datadir.rmdir()
