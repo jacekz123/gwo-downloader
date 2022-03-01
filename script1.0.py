@@ -2,10 +2,10 @@
 
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
-from logging import INFO, basicConfig, getLogger
-from urllib.request import Request, urlopen
+from logging import INFO, WARNING, basicConfig, getLogger
 from pathlib import Path
 from sys import argv
+from urllib.request import Request, urlopen
 
 from fpdf import FPDF
 
@@ -14,7 +14,7 @@ PAGE_OFFSET = 1 # first book page on website is one
 BASE_URL = "https://flipbook.apps.gwo.pl/book/getImage/bookId:"
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1941.0 Safari/537.36'}
 BOOL_PARAM = dict(nargs='?', type=bool, const=True, default=False)
-IMAGE_EXT = 'png'
+IMAGE_EXT = 'jpeg'
 
 # ARGUMENTS
 arg_engine = ArgumentParser()
@@ -26,6 +26,7 @@ arg_engine.add_argument('-j', '--jobs', type=int, dest='jobs', default=1, help='
 arg_engine.add_argument('-o', '--out-pdf', type=str, dest='pdf_name', default=None, required=False, help='if specified, files will be squashed into one PDF with given name (overrides if exists!)')
 # FLAGS
 arg_engine.add_argument('-f', '--force', dest='force', help='if given, overrides files in directory', **BOOL_PARAM)
+arg_engine.add_argument('-v', '--verbose', dest='verb', help='if given, logs will be more descriptive', **BOOL_PARAM)
 arg_engine.add_argument('--remove-unused', dest='rm_unused', help='if given, with `-o` flag, removes all downloaded files', **BOOL_PARAM)
 args = arg_engine.parse_args(list(argv[1:]))
 
@@ -39,8 +40,14 @@ prefix = args.prefix
 workers = args.jobs
 path_to_pdf = args.pdf_name
 rm_unused = args.rm_unused
+verbose = args.verb
 # ----------------------------------
 
+# Logger configuration
+basicConfig(level=(INFO if verbose else WARNING), format='[%(levelname)s][%(asctime)s] %(message)s')
+log = getLogger(Path(__file__).name)
+
+# Functions
 def retrive_image(url, path):
 	"""save content received from given url to given path"""
 	response = urlopen(Request(url, headers=HEADERS, method='GET'))
@@ -56,6 +63,7 @@ def generate_path(page_num) -> str:
 	return str( datadir / f'{prefix}{page_num}.{IMAGE_EXT}' )
 
 def handle_page(page_num):
+	"""wrapper for handling page downloading and saving"""
 	path = generate_path(page_num)
 	log.info(f'retriving page number {page_num} into: {path}')
 	url = generate_url(page_num)
@@ -63,8 +71,10 @@ def handle_page(page_num):
 	retrive_image(url, path)
 
 def handle_range(start, stop):
+	"""iterates over given range and calls `handle_page`"""
 	for page_num in range(start, stop):
 		handle_page(page_num)
+	log.info(f'finished handling range: <{start} : {stop})')
 
 # Path handling
 if datadir.exists():
@@ -78,15 +88,16 @@ else:
 		log.error(f'exception occured while creating directory: {e}')
 
 # Multithreading
-page_stop_range = max_page + 1
+page_stop_range = max_page
 pages_per_worker = int(page_stop_range / workers)
 with ThreadPoolExecutor(max_workers=workers) as executor:
 	futures = []
 	for i in range(PAGE_OFFSET, page_stop_range, pages_per_worker):
-		futures.append(executor.submit(handle_range, i, min(max_page, i + pages_per_worker)))
+		futures.append((executor.submit(handle_range, i, min(max_page, i + pages_per_worker)), i))
 
-	for future in futures:
+	for future, fstart in futures:
 		exc = future.exception()
+		assert exc is None, f'job <{fstart} ; {fstart + pages_per_worker}) finished with exception: {exc}'
 
 # Generation of PDF
 if path_to_pdf is not None:
